@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flag Football Player Comparison</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #1f1f1f;
+      color: #fff;
+      margin: 20px;
+    }
+    h1 {
+      text-align: center;
+      color: #f0f0f0;
+    }
+    .dropdown {
+      text-align: center;
+      margin: 20px;
+    }
+    .summary {
+      max-width: 800px;
+      margin: 0 auto 20px auto;
+      padding: 15px;
+      background-color: #2c2c2c;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      line-height: 1.5;
+    }
+    .summary h2 {
+      margin-top: 0;
+      color: #f39c12;
+    }
+    .chart {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+    }
+    .category {
+      background-color: #2c2c2c;
+      border-radius: 10px;
+      padding: 10px;
+      width: 120px;
+      height: 600px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    }
+    .category h3 {
+      margin-bottom: 10px;
+      color: #f39c12;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    .bubble {
+      fill: #f39c12;
+      opacity: 0.7;
+      cursor: pointer;
+    }
+    .highlighted {
+      fill: #e74c3c;
+      opacity: 1;
+      stroke: white;
+      stroke-width: 2;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 5px;
+      pointer-events: none;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Flag Football Player Comparison</h1>
+
+<div class="dropdown">
+  <label for="playerSelect">Select Player:</label>
+  <select id="playerSelect"></select>
+</div>
+
+<div class="summary" id="playerSummary"></div>
+
+<div class="chart" id="chart"></div>
+
+<div class="tooltip" id="tooltip" style="display: none;"></div>
+
+<script>
+  const categories = [
+    { name: 'Passing Yards', key: 'Pass Yards' },
+    { name: 'Passing Scoring', key: 'Passing_Scoring' },
+    { name: 'Rush Yards', key: 'Rush Yards' },
+    { name: 'Rush Scoring', key: 'Rush Scoring' },
+    { name: 'Rush Avg.', key: 'Rush Avg' },
+    { name: 'Receptions', key: 'Receptions' },
+    { name: 'Rec Yards', key: 'Receiving Yards' },
+    { name: 'Rec Scoring', key: 'Receiving Scoring' },
+    { name: 'Flags', key: 'Flag Pulls' },
+    { name: 'Sacks', key: 'Sacks' },
+    { name: 'Interceptions', key: 'Interceptions' },
+    { name: 'Interception TDs', key: 'Interception TDs' }
+  ];
+
+  const tooltip = d3.select('#tooltip');
+
+  d3.json('player_stats_with_metrics_updated.json').then(data => {
+    const playerNames = data.map(d => d.Name);
+    const select = d3.select('#playerSelect');
+    select.selectAll('option')
+      .data(playerNames)
+      .enter()
+      .append('option')
+      .text(d => d);
+
+    drawChart(playerNames[0]);
+
+    select.on('change', function() {
+      const selectedPlayer = this.value;
+      drawChart(selectedPlayer);
+    });
+
+    function getRank(key, playerValue) {
+      const values = data.map(d => d[key]);
+      const sorted = values.slice().sort((a, b) => b - a);
+      const rank = sorted.indexOf(playerValue) + 1;
+      const suffix = rank === 1 ? 'st' : rank === 2 ? 'nd' : rank === 3 ? 'rd' : 'th';
+      return `${rank}${suffix}`;
+    }
+
+    function drawChart(selectedPlayer) {
+      d3.select('#chart').selectAll('*').remove();
+      const player = data.find(d => d.Name === selectedPlayer);
+
+      const summaryDiv = d3.select('#playerSummary');
+      summaryDiv.html(`
+        <h2>${player.Name} (${player.Team})</h2>
+        <p>
+          ${categories.map(cat => `${cat.name}: ${player[cat.key]} (${getRank(cat.key, player[cat.key])})`).join('<br>')}
+        </p>
+      `);
+
+      categories.forEach(category => {
+        const categoryDiv = d3.select('#chart')
+          .append('div')
+          .attr('class', 'category');
+
+        categoryDiv.append('h3').text(category.name);
+
+        const values = data.map(d => d[category.key]);
+        const maxVal = d3.max(values);
+
+        const svg = categoryDiv.append('svg')
+          .attr('width', 100)
+          .attr('height', 500);
+
+        const scaleY = d3.scaleLinear()
+          .domain([0, maxVal])
+          .range([480, 20]);
+
+        const centerX = 50;
+
+        svg.selectAll('circle')
+          .data(data)
+          .enter()
+          .append('circle')
+          .attr('cx', centerX)
+          .attr('cy', d => scaleY(d[category.key]))
+          .attr('r', 10)
+          .attr('class', d => d.Name === selectedPlayer ? 'highlighted' : 'bubble')
+          .on('mouseover', function(event, d) {
+            tooltip.style('display', 'block')
+                   .html(`<strong>${d.Name}</strong><br>${category.name}: ${d[category.key].toFixed(2)}`)
+                   .style('left', (event.pageX + 10) + 'px')
+                   .style('top', (event.pageY - 20) + 'px');
+          })
+          .on('mouseout', function() {
+            tooltip.style('display', 'none');
+          });
+      });
+    }
+  });
+</script>
+
+</body>
+</html>
